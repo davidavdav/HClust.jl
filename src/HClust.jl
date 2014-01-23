@@ -5,6 +5,7 @@ module HClust
 
 export Hclust, hclust
 
-require("hclust.jl")
+include("types.jl")
+include("hclust.jl")
 
 end
