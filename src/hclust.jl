@@ -63,3 +63,4 @@ function test_hclust(N::Int)
     writedlm("hclust.txt", d)
     hclust(d, :average)
 end
+
