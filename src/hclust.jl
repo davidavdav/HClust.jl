@@ -35,9 +35,17 @@ function hclust_n3{T}(d::Matrix{T}, method::Function)
                     mask = cols | rows
                 end
             end
-        end       
-        push!(mr, mi)
-        push!(mc, mj)
+        end 
+        ## simulate R's order
+        if mi < 0 && mj < 0 && mi > mj ||
+            mi > 0 && mj > 0 && mi < mj ||
+            mi < 0 && mj > 0
+            push!(mr, mi)
+            push!(mc, mj)
+        else
+            push!(mr, mj)
+            push!(mc, mi)
+        end
         push!(h, min)
         cl[mask] = next
         next += 1
@@ -168,7 +176,7 @@ function hclust2{T}(d::Matrix{T}, method::Function)
     next = 1
     i = 1
     c = Array(Int, nc)
-    c[1] = 1                      # arbitrary
+    c[1] = 1                      # arbitrary choice
     while nc > 1
         found=false
         min = Inf
@@ -217,6 +225,12 @@ function hclust2{T}(d::Matrix{T}, method::Function)
         if mc[i] > 0
             mc[i] = io[mc[i]]
         end
+        ## R's order of pairs
+        if ! (mr[i] < 0 && mc[i] < 0 && mr[i] > mc[i] ||
+              mr[i] > 0 && mc[i] > 0 && mr[i] < mc[i] ||
+              mr[i] < 0 && mc[i] > 0)
+            mr[i], mc[i] = mc[i], mr[i]
+        end
     end
     hcat(mr[o], mc[o]), h[o]
 end
@@ -236,10 +250,10 @@ function hclust_minimum{T}(d::Matrix{T})
     else
         d = copy(d)
     end
-    mr = Int[]                  # min row
-    mc = Int[]                  # min col
-    h = T[]                     # height
     nc = size(d,1)
+    mr = Array(Int, nc-1)       # min row
+    mc = Array(Int, nc-1)       # min col
+    h = Array(T, nc-1)          # height
     merges = -[1:nc]
     next = 1
     ## For each 0 < i <= n compute Nearest Neighbor N[i]
@@ -292,13 +306,13 @@ function hclust_minimum{T}(d::Matrix{T})
         if merges[i] < 0 && merges[j] < 0 && merges[i] > merges[j] ||
             merges[i] > 0 && merges[j] > 0 && merges[i] < merges[j] ||
             merges[i] < 0 && merges[j] > 0
-            push!(mr, merges[i])
-            push!(mc, merges[j])
+            mr[next] = merges[i]
+            mc[next] = merges[j]
         else
-            push!(mr, merges[j])
-            push!(mc, merges[i])
+            mr[next] = merges[j]
+            mc[next] = merges[i]
         end
-        push!(h, min)
+        h[next] = min
         merges[i] = next
         merges[j] = merges[nc]
         ## update d, split in ranges k<i, i<k<j, j<k<=nc
@@ -387,7 +401,7 @@ end
 function test_hclust(N::Int)
     d = gendist(N)
     writedlm("hclust.txt", d)
-    h = hclust_minimum(d)
+    h = hclust2(d, maximum)
     writedlm("merge.txt", h[1])
     writedlm("height.txt", h[2])
     d
