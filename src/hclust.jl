@@ -54,6 +54,7 @@ function hclust_n3{T}(d::Matrix{T}, method::Function)
 end
 
 ## Efficient single link algorithm, according to Olson, O(n^2), fig 2. 
+## Verified against R's implementation, correct, and about 2.5 x faster
 ## For each i < j compute D(i,j) (this is already given)
 ## For each 0 < i <= n compute Nearest Neighbor N(i)
 ## Repeat n-1 times
@@ -199,8 +200,8 @@ function Base.maximum{T}(d::Matrix{T}, cl1::Vector{Int}, cl2::Vector{Int})
     for i in cl1 for j in cl2
         if d[i,j] > max
             max = d[i,j]
-            mi = i
-            mj = j
+#            mi = i
+#            mj = j
         end
     end end
     max
@@ -298,6 +299,7 @@ end
 
 ## Another neirest neighbor algorithm, for reducible metrics
 ## From C. F. Olson, Parallel Computing 21 (1995) 1313--1325, fig 5
+## Verfied against R implementation for mean and maximum, correct but ~ 5x slower
 ## Pick c1: 0 <= c1 <= n random
 ## i <- 1
 ## repeat n-1 times
@@ -312,10 +314,10 @@ function hclust2{T}(d::Matrix{T}, method::Function)
     if !issym(d)
         d += d'                 # replaces d, which must be symmetric
     end
-    mr = Int[]                  # min row
-    mc = Int[]                  # min col
-    h = T[]                     # height
     nc = size(d,1)
+    mr = Array(Int, nc-1)       # min row
+    mc = Array(Int, nc-1)       # min col
+    h = Array(T, nc-1)          # height
     cl = map(x->[x], 1:nc)
     merges = -[1:nc]
     next = 1
@@ -342,18 +344,21 @@ function hclust2{T}(d::Matrix{T}, method::Function)
             found = i > 2 && N[i] == N[i-2]
         end
         ## merge c[i] and neirest neigbor c[i], i.e., c[i-1]
-        lo, high = sort([N[i-1], N[i]])
+        if N[i-1] < N[i]
+            lo, high = N[i-1], N[i]
+        else
+            lo, high = N[i], N[i-1]
+        end
         ## first, store the result
-        push!(mr, merges[lo])
-        push!(mc, merges[high])
-        push!(h, min)
+        mr[next] = merges[lo]
+        mc[next] = merges[high]
+        h[next] = min
         merges[lo] = next
         merges[high] = merges[nc]
         next += 1
         ## then perform the actual merge
         cl[lo] = vcat(cl[lo], cl[high])
         cl[high] = cl[nc]
-        nc -= 1
         if i>3
             i -= 3
         else
@@ -361,10 +366,11 @@ function hclust2{T}(d::Matrix{T}, method::Function)
         end
         ## replace any nearest neighbor referring to nc
         for k=1:i
-            if N[k] == nc+1
+            if N[k] == nc
                 N[k] = high
             end
         end
+        nc -= 1
     end
     ## fix order for presenting result
     o = sortperm(h)
