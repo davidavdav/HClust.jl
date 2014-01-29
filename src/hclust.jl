@@ -192,6 +192,7 @@ end
         
 
 ## functions to comput maximum, minimum, mean for just a slice of an array
+## Only consider the upper tiangle, i.e., i<j
 function Base.maximum{T}(d::Matrix{T}, cl1::Vector{Int}, cl2::Vector{Int})
     max = -Inf
     mi = mj = 0
@@ -285,12 +286,18 @@ function hclust1{T}(d::Matrix{T}, method::Function)
         if mc[i] > 0
             mc[i] = io[mc[i]]
         end
+        ## R's order of pairs
+        if ! (mr[i] < 0 && mc[i] < 0 && mr[i] > mc[i] ||
+              mr[i] > 0 && mc[i] > 0 && mr[i] < mc[i] ||
+              mr[i] < 0 && mc[i] > 0)
+            mr[i], mc[i] = mc[i], mr[i]
+        end
     end
     hcat(mr[o], mc[o]), h[o]
 end
 
 ## Another neirest neighbor algorithm, for reducible metrics
-## From C. F. Olson, Parallel Computing 21 (1995) 1313--1325
+## From C. F. Olson, Parallel Computing 21 (1995) 1313--1325, fig 5
 ## Pick c1: 0 <= c1 <= n random
 ## i <- 1
 ## repeat n-1 times
@@ -298,7 +305,7 @@ end
 ##     i++
 ##     c[i] = nearest neigbour c[i-1]
 ##   until c[i] = c[i-2] ## nearest of nearest is cluster itself
-##   merge c[i] and nearest neigbor c[1]
+##   merge c[i] and nearest neigbor c[i]
 ##   if i>3 i -= 3 else i <- 1
 function hclust2{T}(d::Matrix{T}, method::Function)
     @assert size(d,1) == size(d,2)
@@ -313,8 +320,8 @@ function hclust2{T}(d::Matrix{T}, method::Function)
     merges = -[1:nc]
     next = 1
     i = 1
-    c = Array(Int, nc)
-    c[1] = 1                      # arbitrary choice
+    N = Array(Int, nc)
+    N[1] = 1                      # arbitrary choice
     while nc > 1
         found=false
         min = Inf
@@ -322,20 +329,20 @@ function hclust2{T}(d::Matrix{T}, method::Function)
             i += 1
             mi = 0
             min = Inf
-            cim1 = c[i-1]
-            ##c[i] = nearest neigbour c[i-1]
-            for j = 1:nc if cim1 != j
-                distance = method(d, cl[cim1], cl[j])
+            Nim1 = N[i-1]
+            ## c[i] = nearest neigbour c[i-1]
+            for j = 1:nc if Nim1 != j
+                distance = method(d, cl[Nim1], cl[j])
                 if distance < min
                     min = distance
                     mi = j
                 end
             end end
-            c[i] = mi           # c[i+1] is nearest neigbor to c[i]
-            found = i > 2 && c[i] == c[i-2]
+            N[i] = mi           # N[i+1] is nearest neigbor to N[i]
+            found = i > 2 && N[i] == N[i-2]
         end
-        ## merge c[i] and neirest neigbor c[1], i.e., c[2]
-        lo, high = sort([c[i-1], c[i]])
+        ## merge c[i] and neirest neigbor c[i], i.e., c[i-1]
+        lo, high = sort([N[i-1], N[i]])
         ## first, store the result
         push!(mr, merges[lo])
         push!(mc, merges[high])
@@ -351,6 +358,12 @@ function hclust2{T}(d::Matrix{T}, method::Function)
             i -= 3
         else
             i = 1
+        end
+        ## replace any nearest neighbor referring to nc
+        for k=1:i
+            if N[k] == nc+1
+                N[k] = high
+            end
         end
     end
     ## fix order for presenting result
@@ -373,6 +386,27 @@ function hclust2{T}(d::Matrix{T}, method::Function)
     hcat(mr[o], mc[o]), h[o]
 end
 
+## this calls the routine that gives the correct answer, fastest
+function hclust{T}(d::Matrix{T}, method::Symbol)
+    if method == :single
+        h = hclust_minimum(d)
+    elseif method == :complete
+        h = hclust2(d, maximum)
+    elseif method == :average
+        h = hclust2(d, mean)
+    else
+        error("Unsupported method ", method)
+    end
+    nc = size(d,1)
+    ## order and label are placeholders at the moment
+    Hclust(h..., [1:nc], [1:nc], method)
+end
+
+function cutree(hclust::Hclust; k::Int=Nothing, h::Real=Nothing)
+    ## todo
+end
+
+## some diagnostic functions, not exported
 function printupper(d::Matrix)
     n = size(d,1)
     for i = 1:(n-1)
@@ -384,26 +418,10 @@ function printupper(d::Matrix)
     end
 end                
     
-
-function hclust{T}(d::Matrix{T}, method::Symbol)
-    if method == :single
-        h = hclust_minimum(d)
-    elseif method == :complete
-        h = hclust2(d, maximum)
-    elseif method == :average
-        h = hclust_n3(d, mean)
-    else
-        error("Unsupported method ", method)
-    end
-    nc = size(d,1)
-    ## order and label are placeholders at the moment
-    Hclust(h..., [1:nc], [1:nc], method)
-end
-
-function test_hclust(N::Int)
+function test_hclust(N::Int, method=:complete)
     d = gendist(N)
     writedlm("hclust.txt", d)
-    h = hclust(d, :single)
+    h = hclust(d, method)
     writedlm("merge.txt", h.merge)
     writedlm("height.txt", h.height)
     d
