@@ -3,8 +3,6 @@
 
 ## Algorithms are based upon C. F. Olson, Parallel Computing 21 (1995) 1313--1325. 
 
-require("types.jl")
-
 ## This seems to work like R's implementation, but it is extremely inefficient
 ## This probably scales O(n^3) or worse. We can use it to check correctness
 function hclust_n3{T}(d::Matrix{T}, method::Function)
