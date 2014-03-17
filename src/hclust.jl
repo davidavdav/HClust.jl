@@ -406,10 +406,6 @@ function hclust{T}(d::Matrix{T}, method::Symbol)
     Hclust(h..., [1:nc], [1:nc], method)
 end
 
-function cutree(hclust::Hclust; k::Int=Nothing, h::Real=Nothing)
-    ## todo
-end
-
 ## some diagnostic functions, not exported
 function printupper(d::Matrix)
     n = size(d,1)
