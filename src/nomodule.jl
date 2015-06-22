@@ -1,3 +1,3 @@
 require("types.jl")
-include("hclust.jl")
+include("hclust_impl.jl")
 include("cutree.jl")
