@@ -6,7 +6,7 @@ module HClust
 export Hclust, hclust, cutree
 
 include("types.jl")
-include("hclust.jl")
+include("main.jl")
 include("cutree.jl")
 
 end
