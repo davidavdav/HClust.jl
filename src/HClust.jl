@@ -1,4 +1,4 @@
-## hclust.jl (c) 2014 David A. van Leeuwen 
+## hclust.jl (c) 2014--2015 David A. van Leeuwen 
 ## Hierarchical clustering, similar to R's hclust()
 
 module HClust
