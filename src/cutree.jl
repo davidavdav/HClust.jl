@@ -1,3 +1,4 @@
+## cutree.jl (c) 2014--2015 David A. van Leeuwen 
 ## cut a tree at height `h' or to `k' clusters
 function cutree(hclust::Hclust; k::Int=1, 
                 h::Real=maximum(hclust.height))

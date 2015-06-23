@@ -3,13 +3,16 @@
 
 ## Algorithms are based upon C. F. Olson, Parallel Computing 21 (1995) 1313--1325. 
 
+function assertdistancematrix(d::AbstractMatrix)
+    nr, nc = size(d)
+    nr == nc || throw(DimensionMismatch("Distance matrix should be square."))
+    issym(d) || error("Distance matrix should be symmetric.")
+end
+
 ## This seems to work like R's implementation, but it is extremely inefficient
 ## This probably scales O(n^3) or worse. We can use it to check correctness
-function hclust_n3{T}(d::Matrix{T}, method::Function)
-    @assert size(d,1) == size(d,2)
-    if !issym(d)
-        d += d'                 # replaces d, which must be symmetric
-    end
+function hclust_n3{T<:Real}(d::AbstractMatrix{T}, method::Function)
+    assertdistancematrix(d)
     mr = Int[]                  # min row
     mc = Int[]                  # min col
     h = T[]                     # height
@@ -17,7 +20,7 @@ function hclust_n3{T}(d::Matrix{T}, method::Function)
     cl = -[1:nc]                # segment to cluster attribution, initially negative
     next = 1                    # next cluster label
     while next < nc 
-        min = Inf
+        mindist = Inf
         mi = mj = 0
         cli = unique(cl)
         mask = BitVector(nc)
@@ -25,9 +28,9 @@ function hclust_n3{T}(d::Matrix{T}, method::Function)
             cols = cl .== cli[j]
             for i in (j+1):length(cli)
                 rows = cl.==cli[i]
-                distance = method(d[rows,cols])
-                if distance < min
-                    min = distance
+                distance = method(d[rows,cols]) # very expensive
+                if distance < mindist
+                    mindist = distance
                     mi = cli[i]
                     mj = cli[j]
                     mask = cols | rows
@@ -44,7 +47,7 @@ function hclust_n3{T}(d::Matrix{T}, method::Function)
             push!(mr, mj)
             push!(mc, mi)
         end
-        push!(h, min)
+        push!(h, mindist)
         cl[mask] = next
         next += 1
     end
@@ -59,14 +62,9 @@ end
 ##   find i,j that minimize D(i,j)
 ##   merge clusters i and j
 ##   update D(i,j) and N(i) accordingly
-function hclust_minimum{T}(d::Matrix{T})
-    @assert size(d,1) == size(d,2)
-    ## For each i < j compute d[i,j] (this is already given) --- we need a local copy
-    if !issym(d)
-        d += d'                
-    else
-        d = copy(d)
-    end
+function hclust_minimum{T<:Real}(ds::Symmetric{T})
+    ## For each i < j compute d[i,j] (this is already given)
+    d = full(ds)                #  we need a local copy
     nc = size(d,1)
     mr = Array(Int, nc-1)       # min row
     mc = Array(Int, nc-1)       # min col
@@ -76,28 +74,25 @@ function hclust_minimum{T}(d::Matrix{T})
     ## For each 0 < i <= n compute Nearest Neighbor N[i]
     N = zeros(Int, nc)
     for k = 1:nc
-        min = Inf
+        mindist = Inf
         mk = 0
         for i = 1:(k-1)
-            if d[i,k] < min
-                min = d[i,k]
+            if d[i,k] < mindist
+                mindist = d[i,k]
                 mk = i
             end
         end
         for j = (k+1):nc
-            if d[k,j] < min
-                min = d[k,j]
+            if d[k,j] < mindist
+                mindist = d[k,j]
                 mk = j
             end
         end
         N[k] = mk
     end
-#    printupper(d)
-#    for n in N[1:nc] print(n, " ") end; println()
-#    lastmin = -Inf
     ## the main loop
     while nc > 1                # O(n)
-        min = d[1,N[1]]
+        mindist = d[1,N[1]]
         i = 1
         for k in 2:nc           # O(n)
             if k < N[k]
@@ -105,20 +100,15 @@ function hclust_minimum{T}(d::Matrix{T})
             else
                 distance = d[N[k],k]
             end
-            if distance < min
-                min = distance 
+            if distance < mindist
+                mindist = distance
                 i = k
             end
         end
- #       if (min < lastmin)
- #           error("Not finding consectutive minima ", min, " ", lastmin, " ", next)
- #       end
- #       lastmin = min
         j = N[i]
         if i > j
             i, j = j, i     # make sure i < j
         end
-#        println("Merging ", i, " and ", j)
         ## update result, compatible to R's order.  It must be possible to do this simpler than this...
         if merges[i] < 0 && merges[j] < 0 && merges[i] > merges[j] ||
             merges[i] > 0 && merges[j] > 0 && merges[i] < merges[j] ||
@@ -129,7 +119,7 @@ function hclust_minimum{T}(d::Matrix{T})
             mr[next] = merges[j]
             mc[next] = merges[i]
         end
-        h[next] = min
+        h[next] = mindist
         merges[i] = next
         merges[j] = merges[nc]
         ## update d, split in ranges k<i, i<k<j, j<k<=nc
@@ -155,7 +145,6 @@ function hclust_minimum{T}(d::Matrix{T})
         for k=(j+1):(nc-1)
             d[j,k] = d[k,nc]
         end
- #       printupper(d[1:(nc-1),1:(nc-1)])
         ## update N[k], k !in (i,j)
         for k=1:nc
             if N[k] == j       # update nearest neigbors != i
@@ -169,17 +158,17 @@ function hclust_minimum{T}(d::Matrix{T})
         nc -= 1
         next += 1
         ## finally we need to update N[i], because it was nearest to j
-        min = Inf
+        mindist = Inf
         mk = 0
         for k=1:(i-1)
-            if d[k,i] < min
-                min = d[k,i]
+            if d[k,i] < mindist
+                mindist = d[k,i]
                 mk = k
             end
         end
         for k = (i+1):nc
-            if d[i,k] < min
-                min = d[i,k]
+            if d[i,k] < mindist
+                mindist = d[i,k]
                 mk = k
             end
         end
@@ -190,35 +179,29 @@ function hclust_minimum{T}(d::Matrix{T})
 end
         
 
-## functions to comput maximum, minimum, mean for just a slice of an array
-## Only consider the upper tiangle, i.e., i<j
-function Base.maximum{T}(d::Matrix{T}, cl1::Vector{Int}, cl2::Vector{Int})
-    max = -Inf
-    mi = mj = 0
+## functions to compute maximum, minimum, mean for just a slice of an array
+
+function slicemaximum{T<:Real}(d::AbstractMatrix{T}, cl1::Vector{Int}, cl2::Vector{Int})
+    maxdist = -Inf
     for i in cl1 for j in cl2
-        if d[i,j] > max
-            max = d[i,j]
-#            mi = i
-#            mj = j
+        if d[i,j] > maxdist
+            maxdist = d[i,j]
         end
     end end
-    max
+    maxdist
 end
 
-function Base.minimum{T}(d::Matrix{T}, cl1::Vector{Int}, cl2::Vector{Int})
-    min = Inf
-    mi = mj = 0
+function sliceminimum{T<:Real}(d::AbstractMatrix{T}, cl1::Vector{Int}, cl2::Vector{Int})
+    mindist = Inf
     for i in cl1 for j in cl2
-        if d[i,j] < min
-            min = d[i,j]
-#            mi = i
-#            mj = j
+        if d[i,j] < mindist
+            mindist = d[i,j]
         end
     end end
-    min
+    mindist
 end
     
-function Base.mean{T}(d::Matrix{T}, cl1::Vector{Int}, cl2::Vector{Int})
+function slicemean{T<:Real}(d::AbstractMatrix{T}, cl1::Vector{Int}, cl2::Vector{Int})
     s = zero(T)
     for i in cl1 for j in cl2
         s += d[i,j]
@@ -226,13 +209,31 @@ function Base.mean{T}(d::Matrix{T}, cl1::Vector{Int}, cl2::Vector{Int})
     s / (length(cl1)*length(cl2))
 end
 
-## Nearest Neighbor Chain algorithm, see Wikipedia
-## It doesn't give me the same results, there must be something I miss. 
-function hclust1{T}(d::Matrix{T}, method::Function)
-    @assert size(d,1) == size(d,2)
-    if !issym(d)
-        d += d'                 # replaces d, which must be symmetric
+## This reorders the pairs to be compatible with R's hclust()
+function rorder!(mr, mc, h)
+    o = sortperm(h)
+    io = invperm(o)
+    for i in 1:length(mr)
+        if mr[i] > 0
+            mr[i] = io[mr[i]]
+        end
+        if mc[i] > 0
+            mc[i] = io[mc[i]]
+        end
+        ## R's order of pairs
+        if ! (mr[i] < 0 && mc[i] < 0 && mr[i] > mc[i] ||
+              mr[i] > 0 && mc[i] > 0 && mr[i] < mc[i] ||
+              mr[i] < 0 && mc[i] > 0)
+            mr[i], mc[i] = mc[i], mr[i]
+        end
     end
+    return o
+end
+
+## Nearest Neighbor Chain algorithm, see Wikipedia
+## It doesn't give me the same results as R, there must be something I miss.
+function hclust1{T<:Real}(d::AbstractMatrix{T}, method::Function)
+    assertdistancematrix(d)
     mr = Int[]                  # min row
     mc = Int[]                  # min col
     h = T[]                     # height
@@ -247,20 +248,20 @@ function hclust1{T}(d::Matrix{T}, method::Function)
         end
         id, C = last(S)
         ## compute distance to single clusters
-        min = Inf
+        mindist = Inf
         mi = 0
         for i in 1:length(cl)
             distance = method(d[cl[i],C])
-            if distance < min
+            if distance < mindist
                 mi = i
-                min = distance
+                mindist = distance
             end
         end
         ## and compare that to previous cluster on stack
         if mi>0
 #            print("Minimum element ", cl[mi], " at ", min, " with C ", C')
         end
-        if length(S) > 1 && (distance = method(d[S[end-1][2], C])) < min
+        if length(S) > 1 && (distance = method(d[S[end-1][2], C])) < mindist
             ## merge top two on stack
             id1, c1 = pop!(S)
             id2, c2 = pop!(S)
@@ -276,26 +277,11 @@ function hclust1{T}(d::Matrix{T}, method::Function)
             push!(S, (-id,[id]))
         end
     end
-    o = sortperm(h)
-    io = invperm(o)
-    for i in 1:length(mr)
-        if mr[i] > 0 
-            mr[i] = io[mr[i]]
-        end
-        if mc[i] > 0
-            mc[i] = io[mc[i]]
-        end
-        ## R's order of pairs
-        if ! (mr[i] < 0 && mc[i] < 0 && mr[i] > mc[i] ||
-              mr[i] > 0 && mc[i] > 0 && mr[i] < mc[i] ||
-              mr[i] < 0 && mc[i] > 0)
-            mr[i], mc[i] = mc[i], mr[i]
-        end
-    end
+    o = rorder!(mr, mc, h)
     hcat(mr[o], mc[o]), h[o]
 end
 
-## Another neirest neighbor algorithm, for reducible metrics
+## Another nearest neighbor algorithm, for reducible metrics
 ## From C. F. Olson, Parallel Computing 21 (1995) 1313--1325, fig 5
 ## Verfied against R implementation for mean and maximum, correct but ~ 5x slower
 ## Pick c1: 0 <= c1 <= n random
@@ -307,16 +293,12 @@ end
 ##   until c[i] = c[i-2] ## nearest of nearest is cluster itself
 ##   merge c[i] and nearest neigbor c[i]
 ##   if i>3 i -= 3 else i <- 1
-function hclust2{T}(d::Matrix{T}, method::Function)
-    @assert size(d,1) == size(d,2)
-    if !issym(d)
-        d += d'                 # replaces d, which must be symmetric
-    end
+function hclust2{T<:Real}(d::Symmetric{T}, method::Function)
     nc = size(d,1)
     mr = Array(Int, nc-1)       # min row
     mc = Array(Int, nc-1)       # min col
     h = Array(T, nc-1)          # height
-    cl = map(x->[x], 1:nc)
+    cl = map(x->[x], 1:nc)      # clusters
     merges = -[1:nc]
     next = 1
     i = 1
@@ -324,24 +306,24 @@ function hclust2{T}(d::Matrix{T}, method::Function)
     N[1] = 1                      # arbitrary choice
     while nc > 1
         found=false
-        min = Inf
+        mindist = Inf
         while !found
             i += 1
             mi = 0
-            min = Inf
+            mindist = Inf
             Nim1 = N[i-1]
             ## c[i] = nearest neigbour c[i-1]
             for j = 1:nc if Nim1 != j
                 distance = method(d, cl[Nim1], cl[j])
-                if distance < min
-                    min = distance
+                if distance < mindist
+                    mindist = distance
                     mi = j
                 end
             end end
             N[i] = mi           # N[i+1] is nearest neigbor to N[i]
             found = i > 2 && N[i] == N[i-2]
         end
-        ## merge c[i] and neirest neigbor c[i], i.e., c[i-1]
+        ## merge c[i] and nearest neigbor c[i], i.e., c[i-1]
         if N[i-1] < N[i]
             lo, high = N[i-1], N[i]
         else
@@ -350,7 +332,7 @@ function hclust2{T}(d::Matrix{T}, method::Function)
         ## first, store the result
         mr[next] = merges[lo]
         mc[next] = merges[high]
-        h[next] = min
+        h[next] = mindist
         merges[lo] = next
         merges[high] = merges[nc]
         next += 1
@@ -371,39 +353,67 @@ function hclust2{T}(d::Matrix{T}, method::Function)
         nc -= 1
     end
     ## fix order for presenting result
-    o = sortperm(h)
-    io = invperm(o)
-    for i in 1:length(mr)
-        if mr[i] > 0 
-            mr[i] = io[mr[i]]
-        end
-        if mc[i] > 0
-            mc[i] = io[mc[i]]
-        end
-        ## R's order of pairs
-        if ! (mr[i] < 0 && mc[i] < 0 && mr[i] > mc[i] ||
-              mr[i] > 0 && mc[i] > 0 && mr[i] < mc[i] ||
-              mr[i] < 0 && mc[i] > 0)
-            mr[i], mc[i] = mc[i], mr[i]
-        end
-    end
+    o = rorder!(mr, mc, h)
     hcat(mr[o], mc[o]), h[o]
 end
 
 ## this calls the routine that gives the correct answer, fastest
-function hclust{T}(d::Matrix{T}, method::Symbol)
+## method names are inspired by R's hclust
+function hclust{T<:Real}(d::Symmetric{T}, method::Symbol)
     if method == :single
         h = hclust_minimum(d)
     elseif method == :complete
-        h = hclust2(d, maximum)
+        h = hclust2(d, slicemaximum)
     elseif method == :average
-        h = hclust2(d, mean)
+        h = hclust2(d, slicemean)
     else
         error("Unsupported method ", method)
     end
     nc = size(d,1)
-    ## order and label are placeholders at the moment
+    ## order and label are placeholders for the moment
     Hclust(h..., [1:nc], [1:nc], method)
+end
+
+## uplo may be Char for v0.3, Symbol for v0.4
+hclust{T<:Real}(d::AbstractMatrix{T}, method::Symbol, uplo) = hclust(Symmetric(d, uplo), method)
+
+function hclust{T<:Real}(d::AbstractMatrix{T}, method::Symbol)
+    assertdistancematrix(d)
+    hclust(Symmetric(d), method)
+end
+
+
+## cut a tree at height `h' or to `k' clusters
+function cutree(hclust::Hclust; k::Int=1, 
+                h::Real=maximum(hclust.height))
+    clusters = Vector{Int}[]
+    nnodes = length(hclust.labels)
+    nodes = [[i::Int] for i=1:nnodes]
+    N = nnodes - k
+    i = 1
+    while i<=N && hclust.height[i] <= h
+        both = vec(hclust.merge[i,:])
+        new = Int[]
+            for x in both
+                if x<0
+                    push!(new, -x)
+                    nodes[-x] = []
+                else
+                    append!(new, clusters[x])
+                    clusters[x] = []
+                end
+            end
+        push!(clusters, new)
+        i += 1
+    end
+    all = vcat(clusters, nodes)
+    all = all[map(length, all) .> 0]
+    ## convert to a single array of cluster indices
+    res = Array(Int, nnodes)
+    for (i,cl) in enumerate(all)
+        res[cl] = i
+    end
+    res
 end
 
 ## some diagnostic functions, not exported
@@ -417,18 +427,3 @@ function printupper(d::Matrix)
         println()
     end
 end                
-    
-function test_hclust(N::Int, method=:complete)
-    d = gendist(N)
-    writedlm("hclust.txt", d)
-    h = hclust(d, method)
-    writedlm("merge.txt", h.merge)
-    writedlm("height.txt", h.height)
-    d
-end
-
-function gendist(N::Int)
-    d = randn(N,N)
-    d += d'
-    d
-end
