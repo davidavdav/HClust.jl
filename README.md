@@ -6,7 +6,9 @@ Hierarchical Clustering for Julia, similar to R's `hclust()`
 Status
 ======
 
-The package is currently work-in-progress.  Clustering involves doing a lot of admin, and it is easy to make an error.  I've tested the results for medium sized clusters (up to 250---5000) elements, for the following methods:
+**Please note** this package has now [been merged](https://github.com/JuliaStats/Clustering.jl/commit/7e6ae49fee3546868b3e277e73b21ca39d6e0f11) into [Clustering.jl](https://github.com/JuliaStats/Clustering.jl)
+
+This repository shows any additional work-in-progress.  Clustering involves doing a lot of admin, and it is easy to make an error.  I've tested the results for medium sized clusters (up to 250---5000) elements, for the following methods:
 
 | method      | validated at matrix size | time | validated |
 |-------------|------------------------|------|-----------|
